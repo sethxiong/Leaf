@@ -60,12 +60,15 @@ public class SnowflakeIDGenImpl implements IDGen {
     @Override
     public synchronized Result get(String key) {
         long timestamp = timeGen();
+        // 出现时钟回拨。依赖 NTP 协议
         if (timestamp < lastTimestamp) {
             long offset = lastTimestamp - timestamp;
             if (offset <= 5) {
                 try {
+                    // [101 << 1] <=> [1010]
                     wait(offset << 1);
                     timestamp = timeGen();
+                    // 时钟追赶失败
                     if (timestamp < lastTimestamp) {
                         return new Result(-1, Status.EXCEPTION);
                     }
@@ -78,6 +81,7 @@ public class SnowflakeIDGenImpl implements IDGen {
             }
         }
         if (lastTimestamp == timestamp) {
+            //                     1  & [111 111 111 111] = [000 000 000 001]
             sequence = (sequence + 1) & sequenceMask;
             if (sequence == 0) {
                 //seq 为0的时候表示是下一毫秒时间开始对seq做随机
@@ -89,6 +93,7 @@ public class SnowflakeIDGenImpl implements IDGen {
             sequence = RANDOM.nextInt(100);
         }
         lastTimestamp = timestamp;
+        //        0 + 41bit << 10bit + 12bit | 10bit | 12bit
         long id = ((timestamp - twepoch) << timestampLeftShift) | (workerId << workerIdShift) | sequence;
         return new Result(id, Status.SUCCESS);
 
